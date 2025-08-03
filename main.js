@@ -9,6 +9,7 @@ const finalTimeEl = document.getElementById('final-time');
 
 let room;
 let timeUpdateInterval;
+let gracePeriodTimeout;
 
 function formatTime(ms) {
     const totalSeconds = Math.floor(ms / 1000);
@@ -77,9 +78,49 @@ function renderPlayers() {
     }
 }
 
+function startGracePeriod() {
+    if (gracePeriodTimeout) {
+        clearTimeout(gracePeriodTimeout);
+    }
+
+    const myPresence = room.presence[room.clientId];
+    // Don't start a timeout if game is over or player is already active
+    if (myPresence.isGameOver || myPresence.active) {
+        return;
+    }
+
+    gracePeriodTimeout = setTimeout(() => {
+        const currentPresence = room.presence[room.clientId];
+        // Check again in case state changed during timeout
+        if (currentPresence.active || currentPresence.isGameOver) {
+            return;
+        }
+
+        const newLives = currentPresence.lives - 1;
+        const isGameOver = newLives <= 0;
+
+        room.updatePresence({
+            lives: newLives,
+            isGameOver: isGameOver,
+        });
+
+        if (isGameOver) {
+            // The endGame function is called via presence subscription
+        } else {
+            // If not game over, start another grace period for the next life.
+            startGracePeriod();
+        }
+    }, 5000);
+}
+
 function handleTouchStart() {
     const myPresence = room.presence[room.clientId];
     if (myPresence.isGameOver) return;
+
+    if (gracePeriodTimeout) {
+        clearTimeout(gracePeriodTimeout);
+        gracePeriodTimeout = null;
+    }
 
     touchArea.classList.add('active');
     instructions.style.display = 'none';
@@ -97,20 +138,14 @@ function handleTouchEnd() {
     touchArea.classList.remove('active');
 
     const elapsed = Date.now() - myPresence.currentStartTime;
-    const newLives = myPresence.lives - 1;
-    const isGameOver = newLives <= 0;
     
     room.updatePresence({
         active: false,
         currentStartTime: null,
         totalElapsedTime: myPresence.totalElapsedTime + elapsed,
-        lives: newLives,
-        isGameOver: isGameOver,
     });
-    
-    if (isGameOver) {
-        endGame();
-    }
+
+    startGracePeriod();
 }
 
 function endGame() {
