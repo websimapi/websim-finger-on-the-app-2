@@ -1,5 +1,4 @@
 const LIVES = 3;
-const GRACE_PERIOD_MS = 5000;
 
 const desktopBlocker = document.getElementById('desktop-blocker');
 const playersList = document.getElementById('players-list');
@@ -9,7 +8,6 @@ const gameOverScreen = document.getElementById('game-over-screen');
 const finalTimeEl = document.getElementById('final-time');
 
 let room;
-let lifeCheckInterval;
 let timeUpdateInterval;
 
 function formatTime(ms) {
@@ -86,9 +84,6 @@ function handleTouchStart() {
     touchArea.classList.add('active');
     instructions.style.display = 'none';
 
-    clearInterval(lifeCheckInterval);
-    lifeCheckInterval = null;
-
     room.updatePresence({
         active: true,
         currentStartTime: Date.now(),
@@ -97,43 +92,24 @@ function handleTouchStart() {
 
 function handleTouchEnd() {
     const myPresence = room.presence[room.clientId];
-    if (myPresence.isGameOver) return;
+    if (!myPresence || !myPresence.active || myPresence.isGameOver) return;
 
     touchArea.classList.remove('active');
 
     const elapsed = Date.now() - myPresence.currentStartTime;
+    const newLives = myPresence.lives - 1;
+    const isGameOver = newLives <= 0;
     
     room.updatePresence({
         active: false,
         currentStartTime: null,
         totalElapsedTime: myPresence.totalElapsedTime + elapsed,
-        lastInactiveTime: Date.now(),
+        lives: newLives,
+        isGameOver: isGameOver,
     });
-
-    if (!lifeCheckInterval) {
-        lifeCheckInterval = setInterval(checkInactive, 1000);
-    }
-}
-
-function checkInactive() {
-    const myPresence = room.presence[room.clientId];
-    if (!myPresence || myPresence.active || myPresence.isGameOver) {
-        clearInterval(lifeCheckInterval);
-        lifeCheckInterval = null;
-        return;
-    }
-
-    if (Date.now() - myPresence.lastInactiveTime > GRACE_PERIOD_MS) {
-        const newLives = myPresence.lives - 1;
-        
-        if (newLives <= 0) {
-            room.updatePresence({ lives: 0, isGameOver: true, lastInactiveTime: Date.now() });
-            endGame();
-            clearInterval(lifeCheckInterval);
-            lifeCheckInterval = null;
-        } else {
-            room.updatePresence({ lives: newLives, lastInactiveTime: Date.now() });
-        }
+    
+    if (isGameOver) {
+        endGame();
     }
 }
 
@@ -161,7 +137,6 @@ async function main() {
         totalElapsedTime: 0,
         currentStartTime: null,
         isGameOver: false,
-        lastInactiveTime: null,
     };
     room.updatePresence(myInitialPresence);
 
@@ -186,4 +161,3 @@ async function main() {
 }
 
 main();
-
